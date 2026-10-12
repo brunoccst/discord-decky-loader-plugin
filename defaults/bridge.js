@@ -78,7 +78,11 @@
   const snapshot = () => {
     const users = store("UserStore");
     const me = users?.getCurrentUser?.();
-    if (!me) return { ready: !!users, loggedIn: false };
+    if (!me) {
+      // The login/QR page only loads a small bundle without UserStore, so treat it as ready.
+      const onAuthPage = /^\/(login|register)\b/.test(location.pathname);
+      return { ready: onAuthPage || !!users, loggedIn: false };
+    }
 
     const selected = store("SelectedChannelStore");
     const channels = store("ChannelStore");

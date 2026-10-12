@@ -168,15 +168,27 @@ function PushToTalk() {
   );
 }
 
+// If Discord never reports ready (e.g. its page changed), let the user open it anyway.
+function Starting() {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setSlow(true), 15000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <PanelSection>
+      <PanelSectionRow>
+        <div>Starting Discord…</div>
+      </PanelSectionRow>
+      {slow && <OpenDiscordButton />}
+    </PanelSection>
+  );
+}
+
 export function VoicePanel({ state }: { state: DiscordState }) {
   if (!state.attached || !state.ready) {
-    return (
-      <PanelSection>
-        <PanelSectionRow>
-          <div>Starting Discord…</div>
-        </PanelSectionRow>
-      </PanelSection>
-    );
+    return <Starting />;
   }
 
   if (!state.loggedIn) {
