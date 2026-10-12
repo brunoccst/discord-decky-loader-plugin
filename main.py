@@ -88,6 +88,8 @@ class DevToolsTab:
                         except Exception:
                             decky.logger.exception("Failed to handle Discord tab event")
         finally:
+            if self.session is not None and not self.session.closed:
+                await self.session.close()
             for future in self.pending.values():
                 if not future.done():
                     future.set_exception(RuntimeError("Discord tab closed"))

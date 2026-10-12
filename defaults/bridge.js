@@ -19,14 +19,25 @@
 
   // --- Webpack module access -------------------------------------------------
 
-  let wreq;
+  // Discord runs several webpack runtimes on the same chunk array and each one
+  // calls our callback, so keep the one with the most loaded modules (the app).
+  // Not cached: early on only the small login runtime exists.
+  let currentWreq;
   const getWreq = () => {
-    if (wreq) return wreq;
     const chunk = window.webpackChunkdiscord_app;
     if (!chunk || typeof chunk.push !== "function") return undefined;
-    chunk.push([[Symbol("discord-deck")], {}, (r) => { wreq = r; }]);
+    let best;
+    chunk.push([[Symbol("discord-deck")], {}, (r) => {
+      if (r?.c && (!best || Object.keys(r.c).length > Object.keys(best.c).length)) best = r;
+    }]);
     chunk.pop();
-    return wreq;
+    if (best && best !== currentWreq) {
+      // A bigger runtime appeared (e.g. after signing in): drop lookups made
+      // against the old one so stores and the dispatcher come from the app.
+      currentWreq = best;
+      resetLookups();
+    }
+    return best;
   };
 
   function* allExports() {
@@ -52,7 +63,7 @@
     return undefined;
   };
 
-  const stores = {};
+  let stores = {};
   const store = (name) =>
     (stores[name] ??= find((e) => typeof e === "object" &&
       (e.getName?.() === name || e.constructor?.displayName === name)));
@@ -64,6 +75,12 @@
       typeof e.subscribe === "function" &&
       typeof e.unsubscribe === "function" &&
       typeof e.register === "function"));
+
+  function resetLookups() {
+    stores = {};
+    flux = undefined;
+    subscribed = false;
+  }
 
   const dispatch = (action) => {
     const f = getFlux();
