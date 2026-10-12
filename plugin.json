@@ -1,0 +1,15 @@
+{
+  "name": "Discord Deck",
+  "author": "brunoccst",
+  "flags": [],
+  "api_version": 1,
+  "publish": {
+    "tags": [
+      "discord",
+      "chat",
+      "voice"
+    ],
+    "description": "Discord voice controls in the Quick Access Menu, built for the controller.",
+    "image": "https://opengraph.githubassets.com/1/brunoccst/discord-plugin-decky-loader"
+  }
+}
