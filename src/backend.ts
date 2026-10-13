@@ -10,6 +10,8 @@ export interface VoiceMember {
 
 export interface DiscordState {
   attached: boolean;
+  // How far the Discord page got: navigated to discord.com, finished loading.
+  page?: { url?: string; loaded?: boolean };
   ready?: boolean;
   loggedIn?: boolean;
   user?: { id: string; name: string; avatar: string | null };
@@ -44,6 +46,15 @@ export const command = <T = null>(name: string, args: Record<string, unknown> = 
 
 export function useDiscordState() {
   const [state, setState] = useState<DiscordState>({ attached: false });
+  const waiting = !state.attached || !state.ready;
+
+  // Pushed "state" events can be missed while the panel is open, so poll
+  // until Discord is ready; reopening the panel did the same by hand.
+  useEffect(() => {
+    if (!waiting) return;
+    const timer = setInterval(() => getState().then(setState).catch(() => {}), 2000);
+    return () => clearInterval(timer);
+  }, [waiting]);
 
   useEffect(() => {
     getState().then(setState).catch(() => {});

@@ -27,10 +27,11 @@ def bridge_source() -> str:
 class DevToolsTab:
     """A minimal DevTools protocol client for one browser tab."""
 
-    def __init__(self, ws_url: str, on_event, on_closed):
+    def __init__(self, ws_url: str, on_event, on_closed, on_page_event=None):
         self.ws_url = ws_url
         self.on_event = on_event
         self.on_closed = on_closed
+        self.on_page_event = on_page_event
         self.session = None
         self.ws = None
         self.reader = None
@@ -55,13 +56,13 @@ class DevToolsTab:
         finally:
             self.pending.pop(msg_id, None)
 
-    async def evaluate(self, expression: str):
+    async def evaluate(self, expression: str, timeout: float = 15):
         try:
             res = await self.send("Runtime.evaluate", {
                 "expression": expression,
                 "awaitPromise": True,
                 "returnByValue": True,
-            })
+            }, timeout)
         except asyncio.TimeoutError:
             raise RuntimeError("Discord didn't respond in time") from None
         if "exceptionDetails" in res:
@@ -83,6 +84,9 @@ class DevToolsTab:
                             future.set_exception(RuntimeError(data["error"].get("message")))
                         else:
                             future.set_result(data.get("result", {}))
+                elif data.get("method") in ("Page.frameNavigated", "Page.loadEventFired"):
+                    if self.on_page_event is not None:
+                        await self.on_page_event(data["method"], data.get("params", {}))
                 elif data.get("method") == "Runtime.bindingCalled":
                     params = data.get("params", {})
                     if params.get("name") == BINDING:
@@ -105,17 +109,13 @@ class DevToolsTab:
             await self.session.close()
 
 
-async def keep_page_active(tab: DevToolsTab):
-    """The view is hidden most of the time, so Chromium would throttle or freeze
-    it. Keep it treated as active and focused so Discord stays responsive."""
-    for method, params in (
-        ("Page.setWebLifecycleState", {"state": "active"}),
-        ("Emulation.setFocusEmulationEnabled", {"enabled": True}),
-    ):
-        try:
-            await tab.send(method, params)
-        except Exception as e:
-            decky.logger.warning(f"{method} failed: {e}")
+async def keep_page_focused(tab: DevToolsTab):
+    """The view is hidden most of the time; tell Chromium to treat it as focused
+    so Discord doesn't idle. Best effort."""
+    try:
+        await tab.send("Emulation.setFocusEmulationEnabled", {"enabled": True})
+    except Exception as e:
+        decky.logger.warning(f"Emulation.setFocusEmulationEnabled failed: {e}")
 
 
 async def find_tab_ws_url(url: str, attempts: int = 50) -> str:
@@ -135,6 +135,8 @@ async def find_tab_ws_url(url: str, attempts: int = 50) -> str:
 class Plugin:
     tab: DevToolsTab | None = None
     last_state: dict = {}
+    # How far the Discord page itself got: navigated to discord.com, finished loading.
+    page: dict = {}
     attach_lock: asyncio.Lock | None = None
 
     # Called by the frontend once it has created the hidden browser view.
@@ -144,9 +146,10 @@ class Plugin:
                 old, self.tab = self.tab, None
                 await old.close()
             self.last_state = {}
+            self.page = {}
 
             ws_url = await find_tab_ws_url(BOOT_URL)
-            tab = DevToolsTab(ws_url, self._on_tab_event, self._on_tab_closed)
+            tab = DevToolsTab(ws_url, self._on_tab_event, self._on_tab_closed, self._on_page_event)
             await tab.connect()
             try:
                 await tab.send("Runtime.enable")
@@ -156,9 +159,9 @@ class Plugin:
                     "source": bridge_source(),
                     "runImmediately": True,
                 })
+                await keep_page_focused(tab)
                 self.tab = tab
                 await tab.send("Page.navigate", {"url": DISCORD_URL})
-                await keep_page_active(tab)
             except Exception:
                 self.tab = None
                 await tab.close()
@@ -170,7 +173,28 @@ class Plugin:
         return decky.DECKY_PLUGIN_VERSION
 
     async def get_state(self) -> dict:
-        return {"attached": self.tab is not None, **self.last_state}
+        # Until Discord reports ready, ask the page directly instead of waiting
+        # for its own (throttled, since the view is hidden) state push.
+        if self.tab is not None and not self.last_state.get("ready"):
+            try:
+                snapshot = await self.tab.evaluate(
+                    "window.__discordDeck ? window.__discordDeck.run('state') : null", timeout=3)
+                if isinstance(snapshot, dict):
+                    self.last_state = snapshot
+            except Exception:
+                pass
+        return {"attached": self.tab is not None, "page": self.page, **self.last_state}
+
+    async def _on_page_event(self, method: str, params: dict):
+        if method == "Page.frameNavigated":
+            frame = params.get("frame", {})
+            if frame.get("parentId"):
+                return
+            self.page = {"url": frame.get("url", ""), "loaded": False}
+        else:
+            self.page = {**self.page, "loaded": True}
+        decky.logger.info(f"Discord page: {self.page}")
+        await decky.emit("state", await self.get_state())
 
     # Runs one of the bridge's commands inside the Discord tab.
     async def command(self, name: str, args: dict | None = None):
@@ -199,6 +223,7 @@ class Plugin:
         decky.logger.warning("Discord tab connection closed")
         self.tab = None
         self.last_state = {}
+        self.page = {}
         await decky.emit("tab_lost")
 
     async def _main(self):

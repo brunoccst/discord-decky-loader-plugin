@@ -5,6 +5,7 @@ export type StartupPhase =
   | { kind: "creating" }
   | { kind: "connecting" }
   | { kind: "loading"; since: number; retried: boolean }
+  | { kind: "ready" }
   | { kind: "error"; message: string };
 
 let phase: StartupPhase = { kind: "creating" };

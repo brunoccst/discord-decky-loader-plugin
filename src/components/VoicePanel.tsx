@@ -19,7 +19,7 @@ import {
 import { command, DiscordState, Guild, VoiceChannel } from "../backend";
 import { DISCORD_ROUTE } from "./DiscordPage";
 import { useFamilyViewLocked } from "../familyView";
-import { startDiscord } from "../lifecycle";
+import { checkLoadStall, startDiscord } from "../lifecycle";
 import { useSecondsSince, useStartupPhase } from "../startup";
 import { applyPttSettings, loadPttSettings, PTT_BUTTONS, PttSettings } from "../pushToTalk";
 
@@ -244,6 +244,12 @@ function Starting({ state }: { state: DiscordState }) {
   const phase = useStartupPhase();
   const seconds = useSecondsSince(phase.kind === "loading" ? phase.since : undefined);
 
+  // The panel re-renders every second while loading, so it doubles as a
+  // backup trigger for the stall check.
+  useEffect(() => {
+    if (phase.kind === "loading") checkLoadStall();
+  }, [phase, seconds]);
+
   if (phase.kind === "error") {
     return (
       <PanelSection title="Discord">
@@ -263,10 +269,19 @@ function Starting({ state }: { state: DiscordState }) {
     step = "Step 2 of 3: Connecting";
     text = "Hooking the plugin up to the Discord window.";
   } else if (phase.kind === "loading" || state.attached) {
-    step = "Step 3 of 3: Loading Discord";
-    text = phase.kind === "loading" && phase.retried
-      ? `That took too long, so Discord was restarted. Loading again… ${seconds}s`
-      : `Downloading and starting Discord. This can take up to a minute. ${seconds}s`;
+    step = "Step 3 of 3: Opening Discord";
+    const page = state.page ?? {};
+    if (!page.url?.startsWith("https://discord.com")) {
+      text = "Opening discord.com.";
+    } else if (!page.loaded) {
+      text = "Loading discord.com. It's quicker after the first time.";
+    } else {
+      text = "Discord's page is open. Waiting for Discord to finish starting.";
+    }
+    if (phase.kind === "loading" && phase.retried) {
+      text = `That took too long, so Discord was restarted. ${text}`;
+    }
+    if (phase.kind === "loading") text += ` (${seconds}s)`;
   }
 
   return (

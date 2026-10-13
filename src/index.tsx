@@ -14,7 +14,7 @@ import {
 import { onFamilyViewChange, startFamilyViewWatch, stopFamilyViewWatch } from "./familyView";
 import { startMicRelay } from "./mic";
 import { restorePttListener, stopPttListener } from "./pushToTalk";
-import { startDiscord, stopLoadWatchdog } from "./lifecycle";
+import { startDiscord, startLifecycleWatch } from "./lifecycle";
 import { getStartupPhase } from "./startup";
 import { checkForUpdate } from "./updater";
 
@@ -55,6 +55,7 @@ export default definePlugin(() => {
     else resetDiscordViewSize();
   });
 
+  const stopLifecycleWatch = startLifecycleWatch();
   startDiscord();
 
   // Discord can't load while Family View is locked; once it's unlocked, start
@@ -86,7 +87,7 @@ export default definePlugin(() => {
     icon: <FaDiscord color="#5865F2" />,
     onDismount() {
       clearTimeout(restartTimer);
-      stopLoadWatchdog();
+      stopLifecycleWatch();
       removeEventListener("show_keyboard", onKeyboard);
       removeEventListener("tab_lost", onTabLost);
       settingsReg.unregister();
