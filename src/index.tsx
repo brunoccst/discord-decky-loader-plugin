@@ -11,12 +11,16 @@ import {
   setDiscordViewSize,
   showKeyboard,
 } from "./discordView";
-import { onFamilyViewChange, startFamilyViewWatch, stopFamilyViewWatch } from "./familyView";
+import {
+  isFamilyViewLocked,
+  onFamilyViewChange,
+  startFamilyViewWatch,
+  stopFamilyViewWatch,
+} from "./familyView";
 import { startMicRelay } from "./mic";
 import { restorePttListener, stopPttListener } from "./pushToTalk";
 import { startDiscord, startLifecycleWatch } from "./lifecycle";
-import { getStartupPhase } from "./startup";
-import { checkForUpdate } from "./updater";
+import { checkForUpdate, getVersion, takeFinishedUpdate } from "./updater";
 
 function Content() {
   const state = useDiscordState();
@@ -55,20 +59,30 @@ export default definePlugin(() => {
     else resetDiscordViewSize();
   });
 
-  const stopLifecycleWatch = startLifecycleWatch();
-  startDiscord();
-
-  // Discord can't load while Family View is locked; once it's unlocked, start
-  // it again if it isn't running.
+  // Discord can't load while Family View is locked, so wait for it to be
+  // unlocked, then start Discord fresh unless it's already up.
   startFamilyViewWatch();
   onFamilyViewChange(async (locked) => {
     if (locked) return;
     const state = await getState().catch(() => undefined);
-    if (!state?.attached || (!state.ready && getStartupPhase().kind !== "loading")) startDiscord();
+    if (!state?.attached || !state.ready) startDiscord();
   });
 
-  // Let the user know about a new release once per boot; the panel has the button.
-  checkForUpdate()
+  const stopLifecycleWatch = startLifecycleWatch();
+  if (!isFamilyViewLocked()) startDiscord();
+
+  // Right after an update Decky reloads the plugin, so this is a fresh start:
+  // confirm it, and don't offer the update that was just installed.
+  const updatingTo = takeFinishedUpdate();
+  getVersion()
+    .then((version) => {
+      if (updatingTo && updatingTo === version) {
+        toaster.toast({ title: "Discord", body: `Updated to ${version}. Discord is restarting.` });
+        return null;
+      }
+      // Otherwise let the user know about a new release once per boot.
+      return checkForUpdate();
+    })
     .then((update) => {
       if (update) {
         toaster.toast({

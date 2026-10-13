@@ -1,6 +1,7 @@
 import { addEventListener, removeEventListener } from "@decky/api";
 import { attach, DiscordState, getState } from "./backend";
 import { createDiscordView } from "./discordView";
+import { isFamilyViewLocked } from "./familyView";
 import { getStartupPhase, setStartupPhase } from "./startup";
 
 // If Discord hasn't finished loading by then, restart it once automatically,
@@ -25,7 +26,8 @@ let handlingStall = false;
 // Called on a timer and from the panel; restarts or errors out a stalled load.
 export async function checkLoadStall() {
   const phase = getStartupPhase();
-  if (phase.kind !== "loading" || handlingStall) return;
+  // A load blocked by Family View isn't a stall; unlocking restarts Discord.
+  if (phase.kind !== "loading" || handlingStall || isFamilyViewLocked()) return;
   handlingStall = true;
   try {
     const state = await getState().catch(() => undefined);
