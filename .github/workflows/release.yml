@@ -1,0 +1,42 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to create, e.g. v0.1.0-alpha.1 (a hyphen marks a pre-release)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - name: Package plugin zip
+        run: |
+          mkdir -p out/discord-deck/dist
+          cp dist/index.js out/discord-deck/dist/
+          cp package.json plugin.json main.py LICENSE README.md out/discord-deck/
+          cp -r defaults/. out/discord-deck/
+          cd out && zip -r discord-deck.zip discord-deck
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          files: out/discord-deck.zip
+          prerelease: ${{ contains(inputs.tag || github.ref_name, '-') }}
+          generate_release_notes: true
