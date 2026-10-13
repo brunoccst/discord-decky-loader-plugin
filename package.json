@@ -10,7 +10,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/brunoccst/discord-plugin-decky-loader.git"
+    "url": "git+https://github.com/brunoccst/discord-decky-loader-plugin.git"
   },
   "keywords": [
     "decky",
@@ -21,9 +21,9 @@
   "author": "brunoccst",
   "license": "BSD-3-Clause",
   "bugs": {
-    "url": "https://github.com/brunoccst/discord-plugin-decky-loader/issues"
+    "url": "https://github.com/brunoccst/discord-decky-loader-plugin/issues"
   },
-  "homepage": "https://github.com/brunoccst/discord-plugin-decky-loader#readme",
+  "homepage": "https://github.com/brunoccst/discord-decky-loader-plugin#readme",
   "devDependencies": {
     "@decky/rollup": "^1.0.2",
     "@decky/ui": "^4.11.0",
