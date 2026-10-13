@@ -149,6 +149,9 @@ class Plugin:
             decky.logger.info("Discord tab attached")
             return True
 
+    async def get_version(self) -> str:
+        return decky.DECKY_PLUGIN_VERSION
+
     async def get_state(self) -> dict:
         return {"attached": self.tab is not None, **self.last_state}
 

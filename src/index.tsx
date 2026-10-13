@@ -3,6 +3,7 @@ import { staticClasses } from "@decky/ui";
 import { FaDiscord } from "react-icons/fa";
 import { attach, useDiscordState } from "./backend";
 import { DiscordPage, DISCORD_ROUTE } from "./components/DiscordPage";
+import { UpdateSection } from "./components/UpdateSection";
 import { VoicePanel } from "./components/VoicePanel";
 import {
   createDiscordView,
@@ -13,10 +14,16 @@ import {
 } from "./discordView";
 import { startMicRelay } from "./mic";
 import { restorePttListener, stopPttListener } from "./pushToTalk";
+import { checkForUpdate } from "./updater";
 
 function Content() {
   const state = useDiscordState();
-  return <VoicePanel state={state} />;
+  return (
+    <>
+      <VoicePanel state={state} />
+      <UpdateSection />
+    </>
+  );
 }
 
 async function startDiscord() {
@@ -57,6 +64,18 @@ export default definePlugin(() => {
   });
 
   startDiscord();
+
+  // Let the user know about a new release once per boot; the panel has the button.
+  checkForUpdate()
+    .then((update) => {
+      if (update) {
+        toaster.toast({
+          title: "Discord",
+          body: `Version ${update.latest} is available. Update it from the Discord panel.`,
+        });
+      }
+    })
+    .catch(() => {});
 
   return {
     name: "Discord",

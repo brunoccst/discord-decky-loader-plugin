@@ -13,6 +13,12 @@ A [Decky Loader](https://decky.xyz) plugin that puts Discord in the Steam Deck's
 - Your microphone is captured by the Steam UI and relayed to the Discord tab, because Steam's embedded browser views can't open the mic on their own.
 - **Open Discord** shows the full Discord page, used to sign in once (scan the QR code with the Discord phone app) or for anything the menu doesn't cover yet.
 
+## Updates
+
+The plugin checks this repo's GitHub releases when it starts and has a **Check for updates** button at the bottom of its panel. Updates install through Decky's own installer, which asks you to confirm. This only works while the repository is public, because Decky downloads without signing in to GitHub.
+
+To publish a release, run the **Release** workflow from the Actions tab with a tag such as `v0.1.0-alpha.5` (a hyphen marks a pre-release), after bumping `version` in `package.json` to match.
+
 ## Roadmap
 
 1. ~~Voice controls in the Quick Access Menu~~
