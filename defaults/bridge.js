@@ -76,9 +76,18 @@
       typeof e.unsubscribe === "function" &&
       typeof e.register === "function"));
 
+  // Discord's own channel action creators. Dispatching VOICE_CHANNEL_SELECT
+  // alone only updates the UI; selectVoiceChannel also tells the gateway to join.
+  let channelActions;
+  const getChannelActions = () =>
+    (channelActions ??= find((e) => typeof e === "object" &&
+      typeof e.selectVoiceChannel === "function" &&
+      typeof e.selectChannel === "function"));
+
   function resetLookups() {
     stores = {};
     flux = undefined;
+    channelActions = undefined;
     subscribed = false;
   }
 
@@ -254,14 +263,32 @@
 
   // --- Commands from the plugin ------------------------------------------------
 
-  const voiceChannelSelect = (guildId, channelId) => dispatch({
-    type: "VOICE_CHANNEL_SELECT",
-    guildId,
-    channelId,
-    currentVoiceChannelId: store("SelectedChannelStore")?.getVoiceChannelId?.() ?? null,
-    video: false,
-    stream: false,
-  });
+  const currentVoiceChannelId = () => store("SelectedChannelStore")?.getVoiceChannelId?.() ?? null;
+
+  const selectVoiceChannel = (guildId, channelId) => {
+    const actions = getChannelActions();
+    if (actions) return actions.selectVoiceChannel(channelId);
+    return dispatch({
+      type: "VOICE_CHANNEL_SELECT",
+      guildId,
+      channelId,
+      currentVoiceChannelId: currentVoiceChannelId(),
+      video: false,
+      stream: false,
+    });
+  };
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // Waits briefly for Discord to report the voice channel we asked for, so a
+  // join that silently fails surfaces as an error in the panel.
+  const waitForVoiceChannel = async (channelId) => {
+    for (let i = 0; i < 20; i++) {
+      if (currentVoiceChannelId() === channelId) return;
+      await sleep(250);
+    }
+    throw new Error(channelId ? "Discord didn't join the voice channel" : "Discord didn't leave the call");
+  };
 
   const commands = {
     state: () => snapshot(),
@@ -270,12 +297,16 @@
 
     toggleDeafen: () => dispatch({ type: "AUDIO_TOGGLE_SELF_DEAF", context: "default", syncRemote: true }),
 
-    disconnect: () => voiceChannelSelect(null, null),
+    disconnect: async () => {
+      selectVoiceChannel(null, null);
+      await waitForVoiceChannel(null);
+    },
 
-    join: ({ channelId }) => {
+    join: async ({ channelId }) => {
       const channel = store("ChannelStore")?.getChannel?.(channelId);
       if (!channel) throw new Error("Unknown channel");
-      voiceChannelSelect(channel.guild_id ?? null, channel.id);
+      selectVoiceChannel(channel.guild_id ?? null, channel.id);
+      await waitForVoiceChannel(channel.id);
     },
 
     guilds: () => {
