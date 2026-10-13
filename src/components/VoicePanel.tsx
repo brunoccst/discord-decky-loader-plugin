@@ -1,6 +1,5 @@
 import {
   ButtonItem,
-  DropdownItem,
   Navigation,
   PanelSection,
   PanelSectionRow,
@@ -9,6 +8,7 @@ import {
 import { toaster } from "@decky/api";
 import { useEffect, useState } from "react";
 import {
+  FaArrowLeft,
   FaHeadphones,
   FaMicrophone,
   FaMicrophoneSlash,
@@ -100,23 +100,46 @@ function JoinVoice({ currentChannelId }: { currentChannelId?: string }) {
   }, []);
 
   useEffect(() => {
-    if (!guildId) return setChannels([]);
+    if (!guildId) {
+      localStorage.removeItem(LAST_GUILD_KEY);
+      setChannels([]);
+      return;
+    }
     localStorage.setItem(LAST_GUILD_KEY, guildId);
     run("voiceChannels", { guildId }).then((c) => setChannels((c as VoiceChannel[] | null) ?? []));
   }, [guildId, currentChannelId]);
 
+  const guild = guilds.find((g) => g.id === guildId);
+
+  // A plain list of buttons instead of a dropdown: it's easier to drive with the
+  // D-pad, and Steam's dropdown didn't register selections inside this panel.
+  if (!guildId) {
+    return (
+      <PanelSection title="Join a voice channel">
+        {guilds.length === 0 && (
+          <PanelSectionRow>
+            <div>Loading servers…</div>
+          </PanelSectionRow>
+        )}
+        {guilds.map((g) => (
+          <PanelSectionRow key={g.id}>
+            <ButtonItem layout="below" onClick={() => setGuildId(g.id)}>
+              {g.name}
+            </ButtonItem>
+          </PanelSectionRow>
+        ))}
+      </PanelSection>
+    );
+  }
+
   return (
-    <PanelSection title="Join a voice channel">
+    <PanelSection title={guild ? `Voice channels · ${guild.name}` : "Voice channels"}>
       <PanelSectionRow>
-        <DropdownItem
-          label="Server"
-          strDefaultLabel="Pick a server"
-          rgOptions={guilds.map((g) => ({ data: g.id, label: g.name }))}
-          selectedOption={guildId}
-          onChange={(opt) => setGuildId(opt.data)}
-        />
+        <ButtonItem layout="below" onClick={() => setGuildId(null)}>
+          <FaArrowLeft /> Pick another server
+        </ButtonItem>
       </PanelSectionRow>
-      {guildId && channels.length === 0 && (
+      {channels.length === 0 && (
         <PanelSectionRow>
           <div>No voice channels you can see here.</div>
         </PanelSectionRow>
@@ -145,6 +168,12 @@ function PushToTalk() {
     applyPttSettings(next).catch((e) => toaster.toast({ title: "Discord", body: String(e) }));
   };
 
+  // Cycles R4 → R5 → L4 → L5 on each press.
+  const nextButton = () => {
+    const i = PTT_BUTTONS.findIndex((b) => b.data === settings.button);
+    update({ ...settings, button: PTT_BUTTONS[(i + 1) % PTT_BUTTONS.length].data });
+  };
+
   return (
     <PanelSection title="Push to talk">
       <PanelSectionRow>
@@ -157,12 +186,9 @@ function PushToTalk() {
       </PanelSectionRow>
       {settings.enabled && (
         <PanelSectionRow>
-          <DropdownItem
-            label="Button"
-            rgOptions={PTT_BUTTONS}
-            selectedOption={settings.button}
-            onChange={(opt) => update({ ...settings, button: opt.data })}
-          />
+          <ButtonItem layout="below" onClick={nextButton}>
+            Talk button: {PTT_BUTTONS.find((b) => b.data === settings.button)?.label ?? "R5"}
+          </ButtonItem>
         </PanelSectionRow>
       )}
     </PanelSection>
