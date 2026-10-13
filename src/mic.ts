@@ -35,6 +35,8 @@ async function answerOffer(offer: RTCSessionDescriptionInit) {
     await command("micAnswer", { sdp: pc.localDescription!.toJSON() });
   } catch (e) {
     console.error("[discord-deck] microphone relay failed", e);
+    // Tell the page right away so Discord doesn't sit waiting for the mic.
+    await command("micAnswer", { error: String(e) }).catch(() => {});
   }
 }
 

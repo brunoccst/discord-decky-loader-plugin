@@ -35,22 +35,76 @@ const run = async (name: string, args: Record<string, unknown> = {}) => {
 
 // Waits for Discord to report the voice channel we asked for. Polled from here
 // because timers inside the hidden Discord page are throttled.
-async function confirmVoiceChannel(channelId: string | null) {
-  for (let i = 0; i < 16; i++) {
-    const state = await command<DiscordState>("state").catch(() => null);
-    if ((state?.voice?.channelId ?? null) === channelId) return true;
+async function confirmVoiceChannel(
+  channelId: string | null,
+  onState?: (s: DiscordState) => void,
+  attempts = 16,
+) {
+  let last: DiscordState | null = null;
+  for (let i = 0; i < attempts; i++) {
+    last = await command<DiscordState>("state").catch(() => last);
+    if (last) onState?.(last);
+    if ((last?.voice?.channelId ?? null) === channelId) return { ok: true, last };
+    if (last?.joinError) return { ok: false, last };
     await new Promise((r) => setTimeout(r, 500));
   }
-  return false;
+  return { ok: false, last };
 }
 
-async function joinVoice(channelId: string) {
-  if ((await run("join", { channelId })) === undefined) return;
-  if (!(await confirmVoiceChannel(channelId))) {
-    toaster.toast({
-      title: "Discord",
-      body: "Discord didn't join the voice channel. Open full Discord to see why.",
-    });
+// The join in progress, shared so the panel shows it even after reopening.
+interface Joining {
+  channelId: string;
+  name: string;
+  since: number;
+  step: string;
+}
+let joining: Joining | null = null;
+const joiningListeners = new Set<(j: Joining | null) => void>();
+const setJoining = (next: Joining | null) => {
+  joining = next;
+  joiningListeners.forEach((l) => l(joining));
+};
+
+function useJoining() {
+  const [value, setValue] = useState(joining);
+  useEffect(() => {
+    setValue(joining);
+    joiningListeners.add(setValue);
+    return () => void joiningListeners.delete(setValue);
+  }, []);
+  return value;
+}
+
+// What Discord is doing right now, in words, while a join is in progress.
+function joinStep(s: DiscordState, channelId: string) {
+  if (s.mic?.status === "requesting") return "Getting your microphone…";
+  if (s.voice?.channelId === channelId) return "Connecting to voice…";
+  return "Asking Discord to join…";
+}
+
+async function joinVoice(channel: VoiceChannel) {
+  if (joining) return;
+  setJoining({ channelId: channel.id, name: channel.name, since: Date.now(), step: "Asking Discord to join…" });
+  try {
+    if ((await run("join", { channelId: channel.id })) === undefined) return;
+    // Up to 30s: the first join also sets up the microphone relay.
+    const { ok, last } = await confirmVoiceChannel(
+      channel.id,
+      (s) => joining && setJoining({ ...joining, step: joinStep(s, channel.id) }),
+      60,
+    );
+    if (ok) return;
+    let body = "Discord didn't accept the join request. Open full Discord to see if it's asking for something.";
+    if (last?.joinError) {
+      body = `Discord couldn't join: ${last.joinError}`;
+    } else if (last?.mic?.status === "failed") {
+      body = `Discord couldn't get your microphone, so it didn't join. ${last.mic.error ?? ""}`.trim();
+    } else if (last?.mic?.status === "requesting") {
+      body = "Discord is still waiting for your microphone, so it didn't join. Try again.";
+    }
+    toaster.toast({ title: "Discord", body });
+  } finally {
+    setJoining(null);
   }
 }
 
@@ -88,8 +142,15 @@ function CurrentCall({ state }: { state: DiscordState }) {
     );
   }
 
+  const connecting = !!state.rtc && state.rtc !== "RTC_CONNECTED";
+
   return (
     <PanelSection title={voice.guildName ? `${voice.channelName} · ${voice.guildName}` : voice.channelName}>
+      {connecting && (
+        <PanelSectionRow>
+          <div>Connecting to voice…</div>
+        </PanelSectionRow>
+      )}
       <PanelSectionRow>
         <ButtonItem layout="below" onClick={() => run("toggleMute")}>
           {state.muted ? <><FaMicrophoneSlash /> Unmute</> : <><FaMicrophone /> Mute</>}
@@ -141,6 +202,8 @@ function JoinVoice({ currentChannelId }: { currentChannelId?: string }) {
   }, [guildId, currentChannelId]);
 
   const guild = guilds.find((g) => g.id === guildId);
+  const pending = useJoining();
+  const seconds = useSecondsSince(pending?.since);
 
   // A plain list of buttons instead of a dropdown: it's easier to drive with the
   // D-pad, and Steam's dropdown didn't register selections inside this panel.
@@ -170,6 +233,9 @@ function JoinVoice({ currentChannelId }: { currentChannelId?: string }) {
           <FaArrowLeft /> Pick another server
         </ButtonItem>
       </PanelSectionRow>
+      {pending && (
+        <StatusLine step={`Joining ${pending.name}`} text={`${pending.step} (${seconds}s)`} />
+      )}
       {channels.length === 0 && (
         <PanelSectionRow>
           <div>No voice channels you can see here.</div>
@@ -179,10 +245,10 @@ function JoinVoice({ currentChannelId }: { currentChannelId?: string }) {
         <PanelSectionRow key={c.id}>
           <ButtonItem
             layout="below"
-            disabled={c.id === currentChannelId}
-            onClick={() => joinVoice(c.id)}
+            disabled={!!pending || c.id === currentChannelId}
+            onClick={() => joinVoice(c)}
           >
-            <FaVolumeUp /> {c.name}
+            <FaVolumeUp /> {pending?.channelId === c.id ? "Joining… " : ""}{c.name}
             {c.memberCount > 0 ? ` (${c.memberCount})` : ""}
           </ButtonItem>
         </PanelSectionRow>

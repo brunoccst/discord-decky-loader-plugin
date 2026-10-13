@@ -142,6 +142,10 @@
       muted: !!media?.isSelfMute?.(),
       deafened: !!media?.isSelfDeaf?.(),
       voice,
+      // Discord's voice connection status, e.g. RTC_CONNECTING or RTC_CONNECTED.
+      rtc: store("RTCConnectionStore")?.getState?.() ?? null,
+      mic: micStatus,
+      joinError,
       screen: { width: window.screen.width, height: window.screen.height },
     };
   };
@@ -196,6 +200,13 @@
   let micStream = null;
   let micPending = null;
   let resolveMicAnswer = null;
+  let rejectMicAnswer = null;
+  // Shown in the panel while joining voice: idle, requesting, ok or failed.
+  let micStatus = { status: "idle" };
+  const setMicStatus = (next) => {
+    micStatus = next;
+    pushState();
+  };
 
   const waitForIce = (pc) => new Promise((resolve) => {
     if (pc.iceGatheringState === "complete") return resolve();
@@ -211,6 +222,7 @@
     }
     if (micPending) return micPending;
 
+    setMicStatus({ status: "requesting" });
     micPending = (async () => {
       const pc = new RTCPeerConnection();
       pc.addTransceiver("audio", { direction: "recvonly" });
@@ -219,6 +231,7 @@
       });
       const answer = new Promise((resolve, reject) => {
         resolveMicAnswer = resolve;
+        rejectMicAnswer = reject;
         setTimeout(() => reject(new Error("Microphone relay timed out")), 15000);
       });
 
@@ -232,10 +245,15 @@
         if (pc.connectionState === "failed" || pc.connectionState === "closed") micStream = null;
       };
       micStream = stream;
+      setMicStatus({ status: "ok" });
       return stream;
-    })().finally(() => {
+    })().catch((e) => {
+      setMicStatus({ status: "failed", error: String(e?.message ?? e) });
+      throw e;
+    }).finally(() => {
       micPending = null;
       resolveMicAnswer = null;
+      rejectMicAnswer = null;
     });
     return micPending;
   };
@@ -278,6 +296,8 @@
     });
   };
 
+  let joinError = null;
+
   const commands = {
     state: () => snapshot(),
 
@@ -288,13 +308,19 @@
     // These return right away; the panel polls state to confirm the change,
     // because timers in this hidden page are heavily throttled by Chromium.
     disconnect: () => {
+      joinError = null;
       selectVoiceChannel(null, null);
     },
 
     join: ({ channelId }) => {
       const channel = store("ChannelStore")?.getChannel?.(channelId);
       if (!channel) throw new Error("Unknown channel");
-      selectVoiceChannel(channel.guild_id ?? null, channel.id);
+      joinError = null;
+      // Not awaited: it can wait on the microphone, which outlasts a command.
+      Promise.resolve(selectVoiceChannel(channel.guild_id ?? null, channel.id)).catch((e) => {
+        joinError = String(e?.message ?? e);
+        pushState();
+      });
     },
 
     guilds: () => {
@@ -335,8 +361,9 @@
       }
     },
 
-    micAnswer: ({ sdp }) => {
-      if (resolveMicAnswer) resolveMicAnswer(sdp);
+    micAnswer: ({ sdp, error }) => {
+      if (error) rejectMicAnswer?.(new Error(error));
+      else resolveMicAnswer?.(sdp);
     },
   };
 

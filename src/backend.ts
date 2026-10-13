@@ -23,6 +23,9 @@ export interface DiscordState {
     guildName: string | null;
     members: VoiceMember[];
   } | null;
+  rtc?: string | null;
+  joinError?: string | null;
+  mic?: { status: "idle" | "requesting" | "ok" | "failed"; error?: string };
   screen?: { width: number; height: number };
 }
 
