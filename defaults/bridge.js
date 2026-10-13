@@ -56,9 +56,23 @@
     }
   }
 
+  // Discord's translation modules are Proxies that return a function for any
+  // property name, so they'd match every "has these functions" filter.
+  // Cached, since each probe of such a Proxy logs a missing-translation warning.
+  const catchAllChecked = new WeakMap();
+  const isCatchAll = (e) => {
+    if (typeof e !== "object" && typeof e !== "function") return false;
+    let result = catchAllChecked.get(e);
+    if (result === undefined) {
+      try { result = e["__discordDeckProbe__"] !== undefined; } catch { result = true; }
+      catchAllChecked.set(e, result);
+    }
+    return result;
+  };
+
   const find = (filter) => {
     for (const exp of allExports()) {
-      try { if (filter(exp)) return exp; } catch { /* ignore odd modules */ }
+      try { if (!isCatchAll(exp) && filter(exp)) return exp; } catch { /* ignore odd modules */ }
     }
     return undefined;
   };
@@ -74,7 +88,8 @@
       typeof e.dispatch === "function" &&
       typeof e.subscribe === "function" &&
       typeof e.unsubscribe === "function" &&
-      typeof e.register === "function"));
+      typeof e.register === "function" &&
+      typeof e._actionHandlers === "object"));
 
   // Discord's own channel action creators. Dispatching VOICE_CHANNEL_SELECT
   // alone only updates the UI; selectVoiceChannel also tells the gateway to join.
@@ -82,7 +97,8 @@
   const getChannelActions = () =>
     (channelActions ??= find((e) => typeof e === "object" &&
       typeof e.selectVoiceChannel === "function" &&
-      typeof e.selectChannel === "function"));
+      typeof e.selectChannel === "function" &&
+      typeof e.disconnect === "function"));
 
   function resetLookups() {
     stores = {};
