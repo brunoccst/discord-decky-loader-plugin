@@ -1,37 +1,50 @@
 # Discord Deck
 
-A [Decky Loader](https://decky.xyz) plugin that puts Discord in the Steam Deck's Game Mode, built to be used with the controller instead of a mouse.
+A small [Decky Loader](https://decky.xyz) plugin that makes it easy to use Discord voice from the Steam Deck's Game Mode with just the controller: open Discord, join a voice channel, and mute or leave without touching a mouse.
 
-## What it does (so far)
+It's deliberately simple. It isn't a full Discord client and there are no plans to make it one.
 
-- Runs Discord's web client in a hidden Steam browser view, so it stays connected while you play.
-- **Quick Access Menu** (`...` button):
-  - See the call you're in and who's in it.
-  - Mute, deafen and leave the call.
-  - Pick a server and join one of its voice channels.
-  - Push to talk on a back button (R4, R5, L4 or L5).
-- Your microphone is captured by the Steam UI and relayed to the Discord tab, because Steam's embedded browser views can't open the mic on their own.
-- **Open Discord** shows the full Discord page, used to sign in once (scan the QR code with the Discord phone app) or for anything the menu doesn't cover yet.
+## Features
+
+From the Quick Access Menu (`...` button):
+
+- Join a voice channel: pick a server, then a channel.
+- See the call you're in and who's in it.
+- Mute, deafen and leave the call.
+- Push to talk on a back button (R4, R5, L4 or L5).
+- Open the full Discord page when you need it (for example to sign in).
+- Check for updates and install them through Decky.
+
+Discord stays connected in the background while you play.
+
+## Install
+
+1. Install [Decky Loader](https://decky.xyz) on your Steam Deck.
+2. In Game Mode, open Decky's settings, turn on **Developer mode**, then go to **Developer** › **Install plugin from URL** and enter:
+
+   ```
+   https://github.com/brunoccst/discord-decky-loader-plugin/releases/latest/download/discord-deck.zip
+   ```
+
+3. Open **Discord Deck** from the Quick Access Menu. The first time, tap **Sign in to Discord** and scan the QR code with the Discord app on your phone. You only need to do this once.
+
+If your Steam account uses **Family View**, unlock it first: Discord can't open while Family View is locked, and the plugin tells you when that's the case.
 
 ## Updates
 
-The plugin checks this repo's GitHub releases when it starts and has a **Check for updates** button at the bottom of its panel. Updates install through Decky's own installer, which asks you to confirm. This only works while the repository is public, because Decky downloads without signing in to GitHub.
+The plugin checks this repository's GitHub releases when it starts, and has a **Check for updates** button at the bottom of its panel. Updates install through Decky's own installer, which asks you to confirm.
 
-To publish a release, run the **Release** workflow from the Actions tab with a tag such as `v0.1.0-alpha.5` (a hyphen marks a pre-release), after bumping `version` in `package.json` to match.
-
-## Roadmap
-
-1. ~~Voice controls in the Quick Access Menu~~
-2. Controller-friendly browser for servers, channels and DMs.
-3. Read and reply to messages with the on-screen keyboard.
+To publish a release, bump `version` in `package.json`, then run the **Release** workflow from the Actions tab with a matching tag such as `v1.0.1` (a hyphen, as in `v1.1.0-beta.1`, marks a pre-release). The repository must stay public, since Decky downloads updates without signing in to GitHub.
 
 ## How it works
 
 | Piece | File | Role |
 |---|---|---|
-| Frontend | `src/` | React UI in the Steam client (Quick Access Menu, `/discord-deck` route), creates the hidden browser view, relays the mic, listens for the push-to-talk button. |
-| Backend | `main.py` | Connects to the browser view over Steam's local DevTools endpoint (`127.0.0.1:8080`), injects the bridge, loads `discord.com/app`, and forwards commands and events. |
-| Bridge | `defaults/bridge.js` | Runs inside the Discord page. Reads Discord's internal stores (user, voice state, channels) and dispatches voice actions. No third-party client mod is downloaded or injected. |
+| Frontend | `src/` | The Quick Access Menu panel. Creates a hidden Steam browser view for Discord, relays the microphone, and listens for the push-to-talk button. |
+| Backend | `main.py` | Connects to the hidden view over Steam's local DevTools endpoint (`127.0.0.1:8080`), loads `discord.com/app`, and passes commands and events between the panel and the page. |
+| Bridge | `defaults/bridge.js` | Runs inside the Discord page, reads Discord's own state (user, voice, channels) and triggers Discord's own voice actions. No third-party client mod is used. |
+
+Discord runs as its regular web app, loaded from discord.com each time the plugin starts. The microphone is captured by the Steam UI and relayed to the page, because Steam's hidden browser views can't open it themselves.
 
 ## Development
 
@@ -43,9 +56,13 @@ pnpm run build      # outputs dist/index.js
 pnpm run typecheck
 ```
 
-Deploy to a Deck with the VS Code tasks in `.vscode/` (`setup`, `build`, `deploy`), configured through `.vscode/settings.json`. See the [Decky plugin template](https://github.com/SteamDeckHomebrew/decky-plugin-template) for details.
+See the [Decky plugin template](https://github.com/SteamDeckHomebrew/decky-plugin-template) for deploying a development build to a Deck.
 
 ## Notes
 
-- Driving Discord's web client like this is an unofficial integration. It uses your own logged-in session and Discord's own client actions, but Discord could change its internals at any time and break things.
-- The approach (hidden browser view, mic relay) is based on [Deckcord](https://github.com/marios8543/Deckcord) by marios8543.
+- This is an unofficial integration, not affiliated with Discord. It uses your own signed-in session and Discord's own web app, but Discord can change its internals at any time and break things.
+- The hidden browser view and microphone relay approach is based on [Deckcord](https://github.com/marios8543/Deckcord) by marios8543.
+
+## License
+
+[MIT](LICENSE): anyone can use, copy, change and share it, and it comes with no warranty. The author isn't responsible for anything that happens from using it.
