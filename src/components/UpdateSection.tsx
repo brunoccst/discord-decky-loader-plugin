@@ -1,12 +1,20 @@
 import { ButtonItem, PanelSection, PanelSectionRow } from "@decky/ui";
 import { useEffect, useState } from "react";
-import { checkForUpdate, getVersion, installUpdate, UpdateInfo } from "../updater";
+import {
+  checkForUpdate,
+  clearUpdating,
+  getVersion,
+  installUpdate,
+  markUpdating,
+  UpdateInfo,
+} from "../updater";
 
 type Status =
   | { kind: "idle" }
   | { kind: "checking" }
   | { kind: "upToDate" }
   | { kind: "available"; update: UpdateInfo }
+  | { kind: "installing"; update: UpdateInfo }
   | { kind: "error"; message: string };
 
 export function UpdateSection() {
@@ -29,15 +37,25 @@ export function UpdateSection() {
 
   const install = async (update: UpdateInfo) => {
     try {
+      markUpdating(update.latest);
+      setStatus({ kind: "installing", update });
       await installUpdate(update);
+      // A finished install reloads the plugin and replaces this panel, so still
+      // being here a while later means the prompt was cancelled.
+      setTimeout(() => setStatus((s) => (s.kind === "installing" ? { kind: "available", update } : s)), 30000);
     } catch (e) {
+      clearUpdating();
       setStatus({ kind: "error", message: String(e) });
     }
   };
 
   return (
     <PanelSection title={version ? `Version ${version}` : "Updates"}>
-      {status.kind === "available" ? (
+      {status.kind === "installing" ? (
+        <PanelSectionRow>
+          <div>Installing {status.update.latest}. Confirm in Decky's prompt; the plugin restarts by itself.</div>
+        </PanelSectionRow>
+      ) : status.kind === "available" ? (
         <PanelSectionRow>
           <ButtonItem layout="below" onClick={() => install(status.update)}>
             Update to {status.update.latest}

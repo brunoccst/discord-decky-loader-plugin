@@ -113,3 +113,21 @@ export function installUpdate(update: UpdateInfo) {
     INSTALL_TYPE_UPDATE,
   );
 }
+
+// Remembers an update in progress so the reloaded plugin can confirm it.
+const UPDATING_KEY = "discord-deck:updating-to";
+
+export function markUpdating(version: string) {
+  localStorage.setItem(UPDATING_KEY, version);
+}
+
+export function clearUpdating() {
+  localStorage.removeItem(UPDATING_KEY);
+}
+
+// Returns the version an update just installed, once, after the plugin reloads.
+export function takeFinishedUpdate(): string | null {
+  const version = localStorage.getItem(UPDATING_KEY);
+  clearUpdating();
+  return version;
+}
