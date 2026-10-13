@@ -53,8 +53,22 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
+const withTimeout = <T>(promise: Promise<T>, ms: number, message: string) =>
+  new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
+
 // Returns the newest release if it's newer than what's installed, otherwise null.
-export async function checkForUpdate(): Promise<UpdateInfo | null> {
+// Gives up after 20 seconds so the panel never sits on "Checking…".
+export function checkForUpdate(): Promise<UpdateInfo | null> {
+  return withTimeout(fetchLatest(), 20000, "GitHub didn't answer in time. Try again in a moment.");
+}
+
+async function fetchLatest(): Promise<UpdateInfo | null> {
   const current = await getVersion();
   const res = await fetchNoCors(RELEASES_URL, {
     headers: { Accept: "application/vnd.github+json" },
@@ -67,9 +81,10 @@ export async function checkForUpdate(): Promise<UpdateInfo | null> {
     );
   }
 
-  const releases: any[] = await res.json();
+  const releases = await res.json();
+  if (!Array.isArray(releases)) throw new Error("GitHub sent an unexpected answer");
   let newest: UpdateInfo | null = null;
-  for (const release of releases) {
+  for (const release of releases as any[]) {
     if (release.draft) continue;
     const asset = release.assets?.find((a: any) => a.name === ASSET_NAME);
     if (!asset) continue;

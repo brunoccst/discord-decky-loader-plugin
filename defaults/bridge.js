@@ -278,18 +278,6 @@
     });
   };
 
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-  // Waits briefly for Discord to report the voice channel we asked for, so a
-  // join that silently fails surfaces as an error in the panel.
-  const waitForVoiceChannel = async (channelId) => {
-    for (let i = 0; i < 20; i++) {
-      if (currentVoiceChannelId() === channelId) return;
-      await sleep(250);
-    }
-    throw new Error(channelId ? "Discord didn't join the voice channel" : "Discord didn't leave the call");
-  };
-
   const commands = {
     state: () => snapshot(),
 
@@ -297,16 +285,16 @@
 
     toggleDeafen: () => dispatch({ type: "AUDIO_TOGGLE_SELF_DEAF", context: "default", syncRemote: true }),
 
-    disconnect: async () => {
+    // These return right away; the panel polls state to confirm the change,
+    // because timers in this hidden page are heavily throttled by Chromium.
+    disconnect: () => {
       selectVoiceChannel(null, null);
-      await waitForVoiceChannel(null);
     },
 
-    join: async ({ channelId }) => {
+    join: ({ channelId }) => {
       const channel = store("ChannelStore")?.getChannel?.(channelId);
       if (!channel) throw new Error("Unknown channel");
       selectVoiceChannel(channel.guild_id ?? null, channel.id);
-      await waitForVoiceChannel(channel.id);
     },
 
     guilds: () => {

@@ -56,11 +56,14 @@ class DevToolsTab:
             self.pending.pop(msg_id, None)
 
     async def evaluate(self, expression: str):
-        res = await self.send("Runtime.evaluate", {
-            "expression": expression,
-            "awaitPromise": True,
-            "returnByValue": True,
-        })
+        try:
+            res = await self.send("Runtime.evaluate", {
+                "expression": expression,
+                "awaitPromise": True,
+                "returnByValue": True,
+            })
+        except asyncio.TimeoutError:
+            raise RuntimeError("Discord didn't respond in time") from None
         if "exceptionDetails" in res:
             details = res["exceptionDetails"]
             message = details.get("exception", {}).get("description") or details.get("text")
@@ -100,6 +103,19 @@ class DevToolsTab:
             await self.ws.close()
         if self.session is not None:
             await self.session.close()
+
+
+async def keep_page_active(tab: DevToolsTab):
+    """The view is hidden most of the time, so Chromium would throttle or freeze
+    it. Keep it treated as active and focused so Discord stays responsive."""
+    for method, params in (
+        ("Page.setWebLifecycleState", {"state": "active"}),
+        ("Emulation.setFocusEmulationEnabled", {"enabled": True}),
+    ):
+        try:
+            await tab.send(method, params)
+        except Exception as e:
+            decky.logger.warning(f"{method} failed: {e}")
 
 
 async def find_tab_ws_url(url: str, attempts: int = 50) -> str:
@@ -142,6 +158,7 @@ class Plugin:
                 })
                 self.tab = tab
                 await tab.send("Page.navigate", {"url": DISCORD_URL})
+                await keep_page_active(tab)
             except Exception:
                 self.tab = None
                 await tab.close()

@@ -23,14 +23,43 @@ import { startDiscord } from "../lifecycle";
 import { useSecondsSince, useStartupPhase } from "../startup";
 import { applyPttSettings, loadPttSettings, PTT_BUTTONS, PttSettings } from "../pushToTalk";
 
+// Runs a bridge command; on failure shows the error and returns undefined.
 const run = async (name: string, args: Record<string, unknown> = {}) => {
   try {
     return await command(name, args);
   } catch (e) {
     toaster.toast({ title: "Discord", body: String(e) });
-    return null;
+    return undefined;
   }
 };
+
+// Waits for Discord to report the voice channel we asked for. Polled from here
+// because timers inside the hidden Discord page are throttled.
+async function confirmVoiceChannel(channelId: string | null) {
+  for (let i = 0; i < 16; i++) {
+    const state = await command<DiscordState>("state").catch(() => null);
+    if ((state?.voice?.channelId ?? null) === channelId) return true;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return false;
+}
+
+async function joinVoice(channelId: string) {
+  if ((await run("join", { channelId })) === undefined) return;
+  if (!(await confirmVoiceChannel(channelId))) {
+    toaster.toast({
+      title: "Discord",
+      body: "Discord didn't join the voice channel. Open full Discord to see why.",
+    });
+  }
+}
+
+async function leaveVoice() {
+  if ((await run("disconnect")) === undefined) return;
+  if (!(await confirmVoiceChannel(null))) {
+    toaster.toast({ title: "Discord", body: "Discord didn't leave the call. Try again." });
+  }
+}
 
 const openDiscord = () => {
   Navigation.Navigate(DISCORD_ROUTE);
@@ -72,7 +101,7 @@ function CurrentCall({ state }: { state: DiscordState }) {
         </ButtonItem>
       </PanelSectionRow>
       <PanelSectionRow>
-        <ButtonItem layout="below" onClick={() => run("disconnect")}>
+        <ButtonItem layout="below" onClick={leaveVoice}>
           <FaPhoneSlash /> Leave call
         </ButtonItem>
       </PanelSectionRow>
@@ -151,7 +180,7 @@ function JoinVoice({ currentChannelId }: { currentChannelId?: string }) {
           <ButtonItem
             layout="below"
             disabled={c.id === currentChannelId}
-            onClick={() => run("join", { channelId: c.id })}
+            onClick={() => joinVoice(c.id)}
           >
             <FaVolumeUp /> {c.name}
             {c.memberCount > 0 ? ` (${c.memberCount})` : ""}
