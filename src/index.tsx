@@ -1,7 +1,7 @@
 import { addEventListener, definePlugin, removeEventListener, routerHook, toaster } from "@decky/api";
 import { staticClasses } from "@decky/ui";
 import { FaDiscord } from "react-icons/fa";
-import { attach, useDiscordState } from "./backend";
+import { attach, getState, useDiscordState } from "./backend";
 import { DiscordPage, DISCORD_ROUTE } from "./components/DiscordPage";
 import { UpdateSection } from "./components/UpdateSection";
 import { VoicePanel } from "./components/VoicePanel";
@@ -12,6 +12,7 @@ import {
   setDiscordViewSize,
   showKeyboard,
 } from "./discordView";
+import { onFamilyViewChange, startFamilyViewWatch, stopFamilyViewWatch } from "./familyView";
 import { startMicRelay } from "./mic";
 import { restorePttListener, stopPttListener } from "./pushToTalk";
 import { checkForUpdate } from "./updater";
@@ -65,6 +66,15 @@ export default definePlugin(() => {
 
   startDiscord();
 
+  // Discord can't load while Family View is locked; once it's unlocked, start
+  // it again if it isn't running.
+  startFamilyViewWatch();
+  onFamilyViewChange(async (locked) => {
+    if (locked) return;
+    const state = await getState().catch(() => undefined);
+    if (!state?.attached || !state.ready) startDiscord();
+  });
+
   // Let the user know about a new release once per boot; the panel has the button.
   checkForUpdate()
     .then((update) => {
@@ -88,6 +98,7 @@ export default definePlugin(() => {
       removeEventListener("tab_lost", onTabLost);
       settingsReg.unregister();
       stopPttListener();
+      stopFamilyViewWatch();
       stopMicRelay();
       destroyDiscordView();
       routerHook.removeRoute(DISCORD_ROUTE);

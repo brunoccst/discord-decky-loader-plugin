@@ -18,6 +18,7 @@ import {
 } from "react-icons/fa";
 import { command, DiscordState, Guild, VoiceChannel } from "../backend";
 import { DISCORD_ROUTE } from "./DiscordPage";
+import { useFamilyViewLocked } from "../familyView";
 import { applyPttSettings, loadPttSettings, PTT_BUTTONS, PttSettings } from "../pushToTalk";
 
 const run = async (name: string, args: Record<string, unknown> = {}) => {
@@ -186,7 +187,23 @@ function Starting() {
   );
 }
 
+function FamilyViewNotice() {
+  return (
+    <PanelSection title="Family View is on">
+      <PanelSectionRow>
+        <div>
+          Discord can't open while Steam Family View is on. Unlock Family View with your PIN,
+          then come back here.
+        </div>
+      </PanelSectionRow>
+    </PanelSection>
+  );
+}
+
 export function VoicePanel({ state }: { state: DiscordState }) {
+  const familyViewLocked = useFamilyViewLocked();
+  if (familyViewLocked) return <FamilyViewNotice />;
+
   if (!state.attached || !state.ready) {
     return <Starting />;
   }
