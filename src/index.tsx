@@ -82,7 +82,8 @@ export default definePlugin(() => {
     name: "Discord",
     titleView: <div className={staticClasses.Title}>Discord</div>,
     content: <Content />,
-    icon: <FaDiscord />,
+    // Discord's brand color ("blurple").
+    icon: <FaDiscord color="#5865F2" />,
     onDismount() {
       clearTimeout(restartTimer);
       stopLoadWatchdog();
