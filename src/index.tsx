@@ -1,12 +1,11 @@
 import { addEventListener, definePlugin, removeEventListener, routerHook, toaster } from "@decky/api";
 import { staticClasses } from "@decky/ui";
 import { FaDiscord } from "react-icons/fa";
-import { attach, getState, useDiscordState } from "./backend";
+import { getState, useDiscordState } from "./backend";
 import { DiscordPage, DISCORD_ROUTE } from "./components/DiscordPage";
 import { UpdateSection } from "./components/UpdateSection";
 import { VoicePanel } from "./components/VoicePanel";
 import {
-  createDiscordView,
   destroyDiscordView,
   resetDiscordViewSize,
   setDiscordViewSize,
@@ -15,6 +14,8 @@ import {
 import { onFamilyViewChange, startFamilyViewWatch, stopFamilyViewWatch } from "./familyView";
 import { startMicRelay } from "./mic";
 import { restorePttListener, stopPttListener } from "./pushToTalk";
+import { startDiscord, stopLoadWatchdog } from "./lifecycle";
+import { getStartupPhase } from "./startup";
 import { checkForUpdate } from "./updater";
 
 function Content() {
@@ -25,16 +26,6 @@ function Content() {
       <UpdateSection />
     </>
   );
-}
-
-async function startDiscord() {
-  try {
-    createDiscordView();
-    await attach();
-  } catch (e) {
-    console.error("[discord-deck] failed to start Discord", e);
-    toaster.toast({ title: "Discord", body: `Couldn't start Discord: ${e}` });
-  }
 }
 
 export default definePlugin(() => {
@@ -50,7 +41,7 @@ export default definePlugin(() => {
   let restartTimer: ReturnType<typeof setTimeout> | undefined;
   const onTabLost = () => {
     clearTimeout(restartTimer);
-    restartTimer = setTimeout(startDiscord, 2000);
+    restartTimer = setTimeout(() => startDiscord(), 2000);
   };
   addEventListener("tab_lost", onTabLost);
 
@@ -72,7 +63,7 @@ export default definePlugin(() => {
   onFamilyViewChange(async (locked) => {
     if (locked) return;
     const state = await getState().catch(() => undefined);
-    if (!state?.attached || !state.ready) startDiscord();
+    if (!state?.attached || (!state.ready && getStartupPhase().kind !== "loading")) startDiscord();
   });
 
   // Let the user know about a new release once per boot; the panel has the button.
@@ -94,6 +85,7 @@ export default definePlugin(() => {
     icon: <FaDiscord />,
     onDismount() {
       clearTimeout(restartTimer);
+      stopLoadWatchdog();
       removeEventListener("show_keyboard", onKeyboard);
       removeEventListener("tab_lost", onTabLost);
       settingsReg.unregister();

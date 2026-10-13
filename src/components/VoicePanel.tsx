@@ -19,6 +19,8 @@ import {
 import { command, DiscordState, Guild, VoiceChannel } from "../backend";
 import { DISCORD_ROUTE } from "./DiscordPage";
 import { useFamilyViewLocked } from "../familyView";
+import { startDiscord } from "../lifecycle";
+import { useSecondsSince, useStartupPhase } from "../startup";
 import { applyPttSettings, loadPttSettings, PTT_BUTTONS, PttSettings } from "../pushToTalk";
 
 const run = async (name: string, args: Record<string, unknown> = {}) => {
@@ -196,19 +198,51 @@ function PushToTalk() {
 }
 
 // If Discord never reports ready (e.g. its page changed), let the user open it anyway.
-function Starting() {
-  const [slow, setSlow] = useState(false);
-  useEffect(() => {
-    const timer = setTimeout(() => setSlow(true), 15000);
-    return () => clearTimeout(timer);
-  }, []);
+function StatusLine({ step, text }: { step: string; text: string }) {
+  return (
+    <PanelSectionRow>
+      <div>
+        <div style={{ fontWeight: "bold" }}>{step}</div>
+        <div style={{ opacity: 0.8 }}>{text}</div>
+      </div>
+    </PanelSectionRow>
+  );
+}
+
+// Startup progress, one clear step at a time. Discord restarts itself once if
+// loading stalls, so the user only has to act if that also fails.
+function Starting({ state }: { state: DiscordState }) {
+  const phase = useStartupPhase();
+  const seconds = useSecondsSince(phase.kind === "loading" ? phase.since : undefined);
+
+  if (phase.kind === "error") {
+    return (
+      <PanelSection title="Discord">
+        <StatusLine step="Something went wrong" text={phase.message} />
+        <PanelSectionRow>
+          <ButtonItem layout="below" onClick={() => startDiscord()}>
+            Try again
+          </ButtonItem>
+        </PanelSectionRow>
+      </PanelSection>
+    );
+  }
+
+  let step = "Step 1 of 3: Preparing";
+  let text = "Setting up a hidden window for Discord.";
+  if (phase.kind === "connecting") {
+    step = "Step 2 of 3: Connecting";
+    text = "Hooking the plugin up to the Discord window.";
+  } else if (phase.kind === "loading" || state.attached) {
+    step = "Step 3 of 3: Loading Discord";
+    text = phase.kind === "loading" && phase.retried
+      ? `That took too long, so Discord was restarted. Loading again… ${seconds}s`
+      : `Downloading and starting Discord. This can take up to a minute. ${seconds}s`;
+  }
 
   return (
-    <PanelSection>
-      <PanelSectionRow>
-        <div>Starting Discord…</div>
-      </PanelSectionRow>
-      {slow && <OpenDiscordButton />}
+    <PanelSection title="Discord">
+      <StatusLine step={step} text={text} />
     </PanelSection>
   );
 }
@@ -231,19 +265,17 @@ export function VoicePanel({ state }: { state: DiscordState }) {
   if (familyViewLocked) return <FamilyViewNotice />;
 
   if (!state.attached || !state.ready) {
-    return <Starting />;
+    return <Starting state={state} />;
   }
 
   if (!state.loggedIn) {
     return (
-      <PanelSection title="Sign in">
-        <PanelSectionRow>
-          <div>
-            Open Discord once to sign in. The quickest way is to scan the QR code with the
-            Discord app on your phone.
-          </div>
-        </PanelSectionRow>
-        <OpenDiscordButton label="Open Discord to sign in" />
+      <PanelSection title="Discord">
+        <StatusLine
+          step="Sign in needed"
+          text="Discord is ready but you're not signed in. Tap below, then scan the QR code with the Discord app on your phone. You only need to do this once."
+        />
+        <OpenDiscordButton label="Sign in to Discord" />
       </PanelSection>
     );
   }
@@ -254,7 +286,12 @@ export function VoicePanel({ state }: { state: DiscordState }) {
       <JoinVoice currentChannelId={state.voice?.channelId} />
       <PushToTalk />
       <PanelSection title={`Signed in as ${state.user?.name ?? ""}`}>
-        <OpenDiscordButton />
+        <PanelSectionRow>
+          <div style={{ opacity: 0.8 }}>
+            For anything this panel can't do yet, like text chat, open the full Discord app.
+          </div>
+        </PanelSectionRow>
+        <OpenDiscordButton label="Open full Discord" />
       </PanelSection>
     </>
   );
